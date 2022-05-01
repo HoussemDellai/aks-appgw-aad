@@ -154,6 +154,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
     vm_size                      = var.aks_agent_vm_size
     os_disk_size_gb              = var.aks_agent_os_disk_size
     vnet_subnet_id               = data.azurerm_subnet.subnetaks.id
+    # pod_subnet_id                = data.azurerm_subnet.subnetaks.id
     only_critical_addons_enabled = true # taint default node pool with CriticalAddonsOnly=true:NoSchedule
   }
 
@@ -192,6 +193,14 @@ resource "azurerm_kubernetes_cluster" "aks" {
   depends_on = [azurerm_application_gateway.appgw]
 }
 
+# generated managed identity for app gateway
+data "azurerm_user_assigned_identity" "identity-appgw" {
+  name                = "ingressapplicationgateway-${var.aks_name}" # convention name for AGIC Identity
+  resource_group_name = var.node_resource_group
+
+  depends_on = [azurerm_kubernetes_cluster.aks]
+}
+
 # AppGW (generated with addon) Identity needs also Contributor role over AKS/VNET RG
 resource "azurerm_role_assignment" "role-contributor" {
   scope                = data.azurerm_resource_group.rg-vnet.id # azurerm_resource_group.rg.id
@@ -200,13 +209,12 @@ resource "azurerm_role_assignment" "role-contributor" {
 
   depends_on = [azurerm_kubernetes_cluster.aks, azurerm_application_gateway.appgw]
 }
+resource "azurerm_role_assignment" "role-contributor-rg" {
+  scope                = azurerm_resource_group.rg.id
+  role_definition_name = "Contributor"
+  principal_id         = data.azurerm_user_assigned_identity.identity-appgw.principal_id
 
-# generated managed identity for app gateway
-data "azurerm_user_assigned_identity" "identity-appgw" {
-  name                = "ingressapplicationgateway-${var.aks_name}" # convention name for AGIC Identity
-  resource_group_name = var.node_resource_group
-
-  depends_on = [azurerm_kubernetes_cluster.aks]
+  depends_on = [azurerm_kubernetes_cluster.aks, azurerm_application_gateway.appgw]
 }
 
 resource "azurerm_kubernetes_cluster_node_pool" "appspool" {
@@ -226,8 +234,10 @@ resource "azurerm_kubernetes_cluster_node_pool" "appspool" {
   enable_auto_scaling    = true
   min_count              = 1
   max_count              = 2
-  # subnet_id = 
-  # node_taints       = "CriticalAddonsOnly=true:NoSchedule"
+  fips_enabled           = false
+  vnet_subnet_id         = data.azurerm_subnet.subnetaks.id
+  pod_subnet_id          = data.azurerm_subnet.subnetaks.id
+  node_taints            = ["CriticalAddonsOnly=true:NoSchedule"]
   # node_labels = 
 
   upgrade_settings {
