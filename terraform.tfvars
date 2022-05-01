@@ -1,0 +1,6 @@
+resource_group_name = "rg-aks-cluster"
+node_resource_group = "rg-aks-cluster-managed"
+resources_location  = "westeurope"
+aks_name            = "aks-cluster"
+kubernetes_version  = "1.23.5"
+acr_name            = "acrforakstf011"
